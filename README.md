@@ -1,0 +1,43 @@
+# Antrean Logam Mulia Bot
+
+Bot otomatis untuk melakukan login dan pengecekan antrean di situs Antrean Logam Mulia Antam.
+
+## Fitur
+- Login otomatis menggunakan Playwright/Patchright.
+- Penyelesaian CAPTCHA aritmatika sederhana secara otomatis.
+- Penanganan tantangan Cloudflare (dasar).
+
+## Prasyarat
+- Python 3.8+
+- Playwright / Patchright
+
+## Instalasi
+1. Clone repositori ini:
+   ```bash
+   git clone https://github.com/KhatarMalayki/antam.git
+   cd antam
+   ```
+2. Instal dependensi:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Instal browser Playwright:
+   ```bash
+   playwright install chromium
+   ```
+
+## Penggunaan
+1. Buat file `.env` dan masukkan kredensial Anda:
+   ```env
+   ANTAM_USERNAME=nomor_hp_atau_email
+   ANTAM_PASSWORD=kata_sandi
+   ```
+2. Jalankan bot:
+   ```bash
+   python logam_mulia_bot.py
+   ```
+
+## Pengembangan Selanjutnya
+- [ ] Implementasi pengecekan slot antrean yang tersedia.
+- [ ] Notifikasi via Telegram/WhatsApp jika slot tersedia.
+- [ ] Peningkatan penanganan Cloudflare Turnstile.

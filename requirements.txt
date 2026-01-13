@@ -1,0 +1,4 @@
+playwright
+patchright
+python-dotenv
+requests
