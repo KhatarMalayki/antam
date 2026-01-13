@@ -4,6 +4,7 @@ import os
 import logging
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
+from playwright_stealth import Stealth
 
 # Konfigurasi Logging
 logging.basicConfig(
@@ -16,6 +17,10 @@ logging.basicConfig(
 )
 
 load_dotenv()
+
+# Kredensial yang dicatat langsung di kode (sesuai permintaan user)
+ANTAM_USER = "081212149866"
+ANTAM_PASS = "nafis2205"
 
 def solve_math(question_text):
     """Menyelesaikan CAPTCHA aritmatika sederhana."""
@@ -47,24 +52,27 @@ def send_telegram_notification(message):
 def check_slots(page):
     """
     Logika untuk mengecek slot antrean setelah login.
-    Ini adalah placeholder dan perlu disesuaikan dengan elemen dashboard asli.
     """
     logging.info("Mengecek ketersediaan slot...")
-    # Contoh logika:
-    # if page.locator(".available-slot").count() > 0:
-    #     send_telegram_notification("Slot antrean Antam tersedia!")
+    # Implementasi pengecekan slot bisa ditambahkan di sini
     pass
 
 def run_automation(username, password):
     with sync_playwright() as p:
-        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(user_agent=user_agent)
+        context = browser.new_context(
+            viewport={'width': 1920, 'height': 1080},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
         page = context.new_page()
         
+        # Apply stealth
+        stealth_config = Stealth()
+        stealth_config.apply_stealth_sync(page)
+        
         try:
-            logging.info("Membuka halaman login...")
-            page.goto("https://antrean.logammulia.com/login", wait_until="networkidle")
+            logging.info("Membuka halaman login dengan stealth...")
+            page.goto("https://antrean.logammulia.com/login", wait_until="domcontentloaded", timeout=60000)
             
             # Tunggu sebentar untuk Cloudflare challenge
             time.sleep(5)
@@ -98,14 +106,13 @@ def run_automation(username, password):
                 if "login" not in page.url:
                     logging.info(f"Login Berhasil! URL saat ini: {page.url}")
                     page.screenshot(path="success_login.png")
-                    # Lanjutkan ke pengecekan slot
                     check_slots(page)
                 else:
                     logging.error("Login Gagal. Masih di halaman login.")
                     page.screenshot(path="login_failed.png")
             else:
                 logging.error("Gagal melewati Cloudflare atau form login tidak ditemukan.")
-                page.screenshot(path="cloudflare_blocked.png")
+                page.screenshot(path="page_state.png")
                 
         except Exception as e:
             logging.error(f"Terjadi kesalahan: {e}")
@@ -114,11 +121,11 @@ def run_automation(username, password):
             browser.close()
 
 if __name__ == "__main__":
-    # Mengambil kredensial dari environment variables
-    USER = os.getenv("ANTAM_USERNAME")
-    PASS = os.getenv("ANTAM_PASSWORD")
+    # Prioritaskan kredensial yang dicatat di kode, jika tidak ada baru ambil dari env
+    USER = ANTAM_USER if ANTAM_USER else os.getenv("ANTAM_USERNAME")
+    PASS = ANTAM_PASS if ANTAM_PASS else os.getenv("ANTAM_PASSWORD")
     
     if not USER or not PASS:
-        logging.error("Kredensial tidak ditemukan di file .env!")
+        logging.error("Kredensial tidak ditemukan!")
     else:
         run_automation(USER, PASS)
