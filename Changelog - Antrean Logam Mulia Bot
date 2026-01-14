@@ -1,0 +1,56 @@
+# Changelog - Antrean Logam Mulia Bot
+
+Semua perubahan pada proyek ini akan dicatat di file ini.
+
+## [Unreleased] - 2026-01-14
+
+### Keamanan
+- Menghapus kredensial hardcoded dari `logam_mulia_bot.py`.
+- Menghapus kredensial hardcoded dari `nodriver_antam.py`.
+- Menambahkan template `.env.example` untuk memudahkan konfigurasi pengguna.
+
+### Perubahan Kode Detail
+#### `logam_mulia_bot.py`
+- Baris 22-23: Menghapus `ANTAM_USER` dan `ANTAM_PASS` yang berisi data sensitif.
+- Baris 138-139: Mengubah logika pengambilan kredensial agar sepenuhnya menggunakan `os.getenv`.
+
+#### `nodriver_antam.py`
+- Baris 21-22: Menghapus `ANTAM_USER` dan `ANTAM_PASS` yang berisi data sensitif.
+- Baris 37: Menambahkan pengambilan kredensial dari environment variable di dalam fungsi `main`.
+
+### Fitur Baru
+- Menambahkan fungsi `send_telegram_msg` untuk mengirim notifikasi ke Telegram.
+- Menambahkan fungsi `check_available_slots` untuk mengecek ketersediaan slot antrean secara otomatis setelah login.
+- Integrasi pengecekan slot ke dalam alur utama `run_automation`.
+
+### Perubahan Kode Detail
+#### `logam_mulia_bot.py`
+- Baris 5: Menambahkan `import requests`.
+- Baris 39-52: Menambahkan fungsi `send_telegram_msg`.
+- Baris 54-79: Menambahkan fungsi `check_available_slots`.
+- Baris 165-166: Memanggil `check_available_slots` setelah login berhasil.
+
+### Peningkatan
+- Optimasi `handle_cloudflare_turnstile` dengan menambahkan logika klik pada koordinat widget jika validasi otomatis tidak berjalan.
+- Penambahan waktu tunggu (buffer) untuk memastikan tantangan Cloudflare selesai sebelum melanjutkan ke form login.
+
+### Perubahan Kode Detail
+#### `logam_mulia_bot.py`
+- Baris 90-94: Menambahkan logika `bounding_box` dan `mouse.click` pada iframe Turnstile.
+- Baris 97: Meningkatkan `time.sleep` menjadi 10 detik untuk stabilitas.
+
+## [Nodriver Update] - 2026-01-14
+
+### Fitur Baru (Nodriver)
+- Implementasi penuh alur login menggunakan `nodriver` untuk bypass proteksi bot yang lebih baik.
+- Penambahan fungsi `check_available_slots` versi asinkron untuk `nodriver`.
+- Integrasi notifikasi Telegram ke dalam skrip `nodriver_antam.py`.
+- Penambahan logika deteksi CAPTCHA aritmatika berbasis regex pada konten halaman.
+
+### Perubahan Kode Detail
+#### `nodriver_antam.py`
+- Baris 5: Menambahkan `import requests`.
+- Baris 40-53: Menambahkan fungsi `send_telegram_msg`.
+- Baris 55-77: Menambahkan fungsi `check_available_slots`.
+- Baris 104-118: Menambahkan logika pengisian form login dan penyelesaian CAPTCHA aritmatika.
+- Baris 121-122: Menambahkan pengecekan slot setelah login berhasil.
