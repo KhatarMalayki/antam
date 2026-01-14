@@ -2,6 +2,7 @@ import re
 import time
 import os
 import logging
+import requests
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
@@ -18,9 +19,9 @@ logging.basicConfig(
 
 load_dotenv()
 
-# Kredensial
-ANTAM_USER = "081212149866"
-ANTAM_PASS = "nafis2205"
+# Kredensial diambil dari .env atau environment variable
+ANTAM_USER = os.getenv("ANTAM_USERNAME")
+ANTAM_PASS = os.getenv("ANTAM_PASSWORD")
 
 def solve_math(question_text):
     """Menyelesaikan CAPTCHA aritmatika sederhana."""
@@ -35,20 +36,77 @@ def solve_math(question_text):
         elif op in ['dikali', 'x']: return str(num1 * num3)
     return None
 
-def handle_cloudflare_turnstile(page):
-    """Mencoba menangani widget Cloudflare Turnstile."""
-    logging.info("Mengecek widget Cloudflare Turnstile...")
+def send_telegram_msg(message):
+    """Mengirim notifikasi ke Telegram."""
+    token = os.getenv("TELEGRAM_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if token and chat_id:
+        try:
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            payload = {"chat_id": chat_id, "text": message}
+            requests.post(url, json=payload, timeout=10)
+            logging.info("Notifikasi Telegram terkirim.")
+        except Exception as e:
+            logging.error(f"Gagal mengirim notifikasi Telegram: {e}")
+    else:
+        logging.warning("Token atau Chat ID Telegram tidak ditemukan di .env")
+
+def check_available_slots(page):
+    """Mengecek ketersediaan slot antrean."""
+    logging.info("Mengecek ketersediaan slot antrean...")
     try:
-        # Tunggu iframe Turnstile muncul
-        turnstile_iframe = page.wait_for_selector("iframe[src*='challenges.cloudflare.com']", timeout=10000)
-        if turnstile_iframe:
-            logging.info("Widget Turnstile ditemukan. Menunggu validasi otomatis...")
-            # Kadang cukup menunggu, kadang perlu klik di tengah iframe
-            # Kita coba tunggu sampai checkbox 'Success' muncul di dalam iframe
+        # Navigasi ke halaman pengambilan antrean jika belum di sana
+        if "ambil-antrean" not in page.url:
+            page.goto("https://antrean.logammulia.com/ambil-antrean", wait_until="domcontentloaded")
             time.sleep(5)
+        
+        # Cari elemen yang menunjukkan slot (ini perlu disesuaikan dengan UI asli)
+        # Contoh: mencari teks "Tersedia" atau tombol yang tidak disabled
+        slots = page.locator(".slot-item:not(.disabled), button:has-text('Pilih'):not([disabled])")
+        count = slots.count()
+        
+        if count > 0:
+            msg = f"🔥 SLOT ANTREAN TERSEDIA! Ditemukan {count} slot aktif."
+            logging.info(msg)
+            send_telegram_msg(msg)
+            page.screenshot(path="slots_available.png")
             return True
+        else:
+            logging.info("Belum ada slot antrean yang tersedia.")
+            return False
     except Exception as e:
-        logging.info("Widget Turnstile tidak ditemukan atau sudah tervalidasi.")
+        logging.error(f"Gagal mengecek slot: {e}")
+        return False
+
+def handle_verification(page):
+    """Menangani berbagai jenis verifikasi (Turnstile, reCAPTCHA)."""
+    logging.info("Mengecek widget verifikasi...")
+    
+    # Cek Cloudflare Turnstile
+    try:
+        turnstile_iframe = page.wait_for_selector("iframe[src*='challenges.cloudflare.com']", timeout=5000)
+        if turnstile_iframe:
+            logging.info("Widget Turnstile ditemukan.")
+            box = turnstile_iframe.bounding_box()
+            if box:
+                page.mouse.click(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
+                logging.info("Mencoba mengklik widget Turnstile.")
+            time.sleep(10)
+            return True
+    except: pass
+
+    # Cek reCAPTCHA
+    try:
+        recaptcha_iframe = page.wait_for_selector("iframe[title*='reCAPTCHA']", timeout=5000)
+        if recaptcha_iframe:
+            logging.info("Widget reCAPTCHA ditemukan. Mencoba klik checkbox...")
+            box = recaptcha_iframe.bounding_box()
+            if box:
+                page.mouse.click(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
+            time.sleep(10)
+            return True
+    except: pass
+    
     return False
 
 def run_automation(username, password):
@@ -78,8 +136,8 @@ def run_automation(username, password):
             # Tunggu loading selesai
             time.sleep(5)
             
-            # Tangani Turnstile jika ada
-            handle_cloudflare_turnstile(page)
+            # Tangani Verifikasi jika ada
+            handle_verification(page)
             
             # Cek apakah form login sudah muncul
             if page.locator("#username").is_visible():
@@ -118,6 +176,9 @@ def run_automation(username, password):
                 if "login" not in current_url:
                     logging.info(f"Login Berhasil! URL saat ini: {current_url}")
                     page.screenshot(path="success_login.png")
+                    
+                    # Lakukan pengecekan slot setelah login berhasil
+                    check_available_slots(page)
                 else:
                     logging.error("Login Gagal. Masih di halaman login.")
                     # Cek apakah ada pesan error di halaman
@@ -135,8 +196,8 @@ def run_automation(username, password):
             browser.close()
 
 if __name__ == "__main__":
-    USER = ANTAM_USER if ANTAM_USER else os.getenv("ANTAM_USERNAME")
-    PASS = ANTAM_PASS if ANTAM_PASS else os.getenv("ANTAM_PASSWORD")
+    USER = ANTAM_USER
+    PASS = ANTAM_PASS
     
     if not USER or not PASS:
         logging.error("Kredensial tidak ditemukan!")
