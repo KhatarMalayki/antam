@@ -1,0 +1,845 @@
+from botasaurus.browser import browser, Driver
+import re
+import json
+import os
+from datetime import datetime, timedelta
+
+
+def solve_math_captcha(text):
+    match = re.search(r'(\d+)\s+ditambah\s+(\d+)', text)
+    if match:
+        return int(match.group(1)) + int(match.group(2))
+    
+    match = re.search(r'(\d+)\s+dikurangi\s+(\d+)', text)
+    if match:
+        return int(match.group(1)) - int(match.group(2))
+    
+    match = re.search(r'(\d+)\s+dikali\s+(\d+)', text)
+    if match:
+        return int(match.group(1)) * int(match.group(2))
+    
+    match = re.search(r'Hitunglah\s+(\d+)\s+dikali\s+(\d+)', text)
+    if match:
+        return int(match.group(1)) * int(match.group(2))
+    
+    return None
+
+
+def save_cookies(driver, filename="cookies.json"):
+    """Save cookies to file with timestamp"""
+    try:
+        cookies = driver.get_cookies()
+        cookie_data = {
+            "cookies": cookies,
+            "saved_at": datetime.now().isoformat(),
+            "expires_at": (datetime.now() + timedelta(hours=24)).isoformat()  # Cookies valid for 24 hours
+        }
+        
+        with open(filename, 'w') as f:
+            json.dump(cookie_data, f, indent=2)
+        
+        print(f"Saved {len(cookies)} cookies to {filename}")
+        return True
+    except Exception as e:
+        print(f"Error saving cookies: {e}")
+        return False
+
+
+def load_cookies(driver, filename="cookies.json"):
+    """Load cookies from file if not expired"""
+    try:
+        if not os.path.exists(filename):
+            print("No cookie file found")
+            return False
+        
+        with open(filename, 'r') as f:
+            cookie_data = json.load(f)
+        
+        # Check if cookies are expired
+        expires_at = datetime.fromisoformat(cookie_data["expires_at"])
+        if datetime.now() > expires_at:
+            print("Cookies expired, need to login again")
+            os.remove(filename)  # Remove expired cookie file
+            return False
+        
+        # Load cookies using botasaurus method
+        cookies = cookie_data["cookies"]
+        try:
+            # Try to set cookies using botasaurus approach
+            for cookie in cookies:
+                try:
+                    # Use JavaScript to set cookies
+                    if 'name' in cookie and 'value' in cookie:
+                        cookie_str = f"{cookie['name']}={cookie['value']}"
+                        if 'domain' in cookie:
+                            cookie_str += f"; domain={cookie['domain']}"
+                        if 'path' in cookie:
+                            cookie_str += f"; path={cookie['path']}"
+                        cookie_str += ";"
+                        
+                        driver.run_js(f'document.cookie = "{cookie_str}"')
+                except Exception as e:
+                    print(f"Error setting cookie: {e}")
+                    continue
+            
+            print(f"Loaded {len(cookies)} cookies from {filename}")
+            print(f"Cookies valid until: {expires_at.strftime('%Y-%m-%d %H:%M:%S')}")
+            return True
+            
+        except Exception as e:
+            print(f"Error loading cookies with botasaurus method: {e}")
+            return False
+        
+    except Exception as e:
+        print(f"Error loading cookies: {e}")
+        return False
+
+
+def is_logged_in(driver):
+    """Check if user is already logged in"""
+    try:
+        driver.get("https://antrean.logammulia.com/users")
+        driver.sleep(3)
+        
+        # Check if we're on users page (logged in) or redirected to login
+        current_url = driver.current_url
+        if "users" in current_url:
+            print("Already logged in (detected from URL)")
+            return True
+        elif "login" in current_url:
+            print("Not logged in (redirected to login page)")
+            return False
+        else:
+            # Check page content for login indicators
+            try:
+                page_text = driver.get_text('body').lower()
+                if "username" in page_text and "password" in page_text:
+                    print("Not logged in (login form detected)")
+                    return False
+                elif "profile" in page_text or "logout" in page_text:
+                    print("Already logged in (detected from page content)")
+                    return True
+                else:
+                    print("Login status unclear, assuming not logged in")
+                    return False
+            except:
+                print("Could not determine login status, assuming not logged in")
+                return False
+                
+    except Exception as e:
+        print(f"Error checking login status: {e}")
+        return False
+
+
+@browser(
+    headless=False,  # Use HeadFull mode
+    reuse_driver=True,
+    block_images=False,
+)
+def login_task(driver: Driver, data):
+    print("Starting Antrean Automation...")
+    
+    # Step 1: Try to load cookies and check login status
+    print("Checking saved cookies...")
+    cookies_loaded = load_cookies(driver)
+    
+    if cookies_loaded:
+        print("Cookies loaded, checking login status...")
+        if is_logged_in(driver):
+            print("Successfully logged in with cookies!")
+            # Save fresh cookies after successful login check
+            save_cookies(driver)
+            return proceed_to_antrean(driver)
+        else:
+            print("Cookies invalid, proceeding with login...")
+    else:
+        print("No valid cookies, proceeding with login...")
+    
+    # Step 2: Perform login if needed
+    return perform_login(driver)
+
+
+def perform_login(driver):
+    """Perform the actual login process"""
+    print("Navigating to login page...")
+    driver.get("https://antrean.logammulia.com/login")
+    
+    driver.sleep(15)  # Give more time for page to load
+    
+    # Check for and close info popup if it appears
+    try:
+        driver.is_element_present('div.swal2-popup button.swal2-confirm')
+        print("Info popup detected, clicking OK...")
+        driver.click('div.swal2-popup button.swal2-confirm')
+        driver.sleep(2)  # Give some time for the popup to close
+    except:
+        pass
+    
+    # Extract math captcha question
+    try:
+        captcha_label = driver.get_text('label[for="aritmetika"]')
+        print(f"Math Captcha Question: {captcha_label}")
+        answer = solve_math_captcha(captcha_label)
+        print(f"Solved Answer: {answer}")
+        
+        if answer is not None:
+            driver.type('#aritmetika', str(answer))
+    except Exception as e:
+        print(f"Error solving math captcha: {e}")
+
+    # Fill in credentials
+    print("Filling credentials...")
+    driver.type('#username', "081212149866")
+    driver.type('#password', "nafis2205")
+    
+    # Wait for Turnstile
+    print("Waiting for Turnstile...")
+    driver.sleep(10)
+    
+    print("Clicking login...")
+    driver.click('button[type="submit"]')
+    
+    driver.sleep(10)
+    
+    # Check for popup again after login attempt
+    try:
+        driver.is_element_present('div.swal2-popup button.swal2-confirm')
+        print("Popup detected after login, clicking OK...")
+        driver.click('div.swal2-popup button.swal2-confirm')
+        driver.sleep(2)
+    except:
+        pass
+    
+    # Check if login successful, if not retry
+    max_attempts = 3
+    attempt = 1
+    
+    while attempt < max_attempts and driver.current_url == "https://antrean.logammulia.com/login":
+        print(f"Login failed, attempt {attempt + 1}/{max_attempts}...")
+        
+        # Check for popup again
+        try:
+            driver.is_element_present('div.swal2-popup button.swal2-confirm')
+            print("Popup detected, clicking OK...")
+            driver.click('div.swal2-popup button.swal2-confirm')
+            driver.sleep(2)
+        except:
+            pass
+        
+        # Solve captcha again
+        try:
+            captcha_label = driver.get_text('label[for="aritmetika"]')
+            print(f"Math Captcha Question: {captcha_label}")
+            answer = solve_math_captcha(captcha_label)
+            print(f"Solved Answer: {answer}")
+            
+            if answer is not None:
+                driver.type('#aritmetika', str(answer))
+        except Exception as e:
+            print(f"Error solving math captcha: {e}")
+        
+        # Fill credentials again
+        driver.type('#username', "081212149866")
+        driver.type('#password', "nafis2205")
+        
+        driver.sleep(5)
+        
+        # Click login again
+        driver.click('button[type="submit"]')
+        driver.sleep(10)
+        
+        # Check for popup after login attempt
+        try:
+            driver.is_element_present('div.swal2-popup button.swal2-confirm')
+            print("Popup detected after login, clicking OK...")
+            driver.click('div.swal2-popup button.swal2-confirm')
+            driver.sleep(2)
+        except:
+            pass
+        
+        attempt += 1
+    
+    # Check final login status
+    if driver.current_url == "https://antrean.logammulia.com/users":
+        print("Login successful!")
+        # Save cookies after successful login
+        save_cookies(driver)
+        return proceed_to_antrean(driver)
+    else:
+        print(f"Login failed. Final URL: {driver.current_url}")
+        return {
+            "final_url": driver.current_url,
+            "page_html": driver.page_html[:1000],
+            "status": "login_failed"
+        }
+
+
+def select_available_time_slot(driver):
+    """Check and select available time slot from dropdown"""
+    print("Checking available time slots...")
+    try:
+        # Check if we're on the right page with time slot dropdown
+        if driver.current_url.startswith("https://antrean.logammulia.com/antrean?site="):
+            driver.sleep(3)  # Wait for page to fully load
+            
+            # Look for time slot dropdown
+            try:
+                # Check if dropdown exists
+                dropdown_present = driver.is_element_present('#wakda')
+                if not dropdown_present:
+                    print("No time slot dropdown found")
+                    return False
+                
+                # Get all options from time slot dropdown specifically
+                page_html = driver.page_html
+                
+                # Find the time slot dropdown (id="wakda") and its options
+                # Look for the specific dropdown with id="wakda"
+                wakda_pattern = r'<select[^>]*id="wakda"[^>]*>(.*?)</select>'
+                wakda_match = re.search(wakda_pattern, page_html, re.DOTALL)
+                
+                if not wakda_match:
+                    print("No time slot dropdown (wakda) found")
+                    return False
+                
+                wakda_content = wakda_match.group(1)
+                print(f"DEBUG: wakda dropdown content: {wakda_content[:500]}...")
+                
+                # Find all option elements in the wakda dropdown
+                option_pattern = r'<option[^>]*value="([^"]*)"[^>]*>(.*?)</option>'
+                options = re.findall(option_pattern, wakda_content, re.DOTALL)
+                
+                print(f"Found {len(options)} time slot options")
+                
+                # Debug: Print all options found
+                for value, text in options:
+                    if value and text.strip():
+                        option_section = wakda_content.split(f'value="{value}"')[1].split('</option>')[0]
+                        option_disabled = 'disabled' in option_section
+                        print(f"  Option: '{text.strip()}' (value={value}, disabled={option_disabled})")
+                
+                available_slots = []
+                for value, text in options:
+                    if value and text.strip():  # Skip empty/default option
+                        # Check if option is disabled or contains "Penuh"
+                        option_section = wakda_content.split(f'value="{value}"')[1].split('</option>')[0]
+                        option_disabled = 'disabled' in option_section
+                        option_full = 'Penuh' in text or 'penuh' in text
+                        
+                        if not option_disabled and not option_full:
+                            available_slots.append((value, text.strip()))
+                            print(f"  Available: {text.strip()}")
+                        else:
+                            print(f"  Unavailable: {text.strip()}")
+                
+                if available_slots:
+                    # Select the first available slot
+                    slot_value, slot_text = available_slots[0]
+                    print(f"Selecting available time slot: {slot_text}")
+                    
+                    # Use JavaScript to select the option
+                    driver.run_js(f'document.getElementById("wakda").value = "{slot_value}";')
+                    driver.sleep(2)
+                    
+                    # Look for submit/booking button
+                    try:
+                        submit_selectors = [
+                            'button[type="submit"]',
+                            '.btn-primary',
+                            'button:contains("Daftar")',
+                            'button:contains("Ambil")',
+                            'button:contains("Submit")'
+                        ]
+                        
+                        for selector in submit_selectors:
+                            try:
+                                submit_btn = driver.get_element(selector)
+                                if submit_btn and not submit_btn.get_attribute('disabled'):
+                                    submit_btn.click()
+                                    print("Clicked submit button for time slot")
+                                    driver.sleep(5)
+                                    
+                                    # Check for confirmation
+                                    try:
+                                        confirm_selectors = [
+                                            'button:contains("Konfirmasi")',
+                                            'button:contains("Ya")',
+                                            'button:contains("OK")',
+                                            '.btn-primary'
+                                        ]
+                                        
+                                        for conf_selector in confirm_selectors:
+                                            try:
+                                                confirm_btn = driver.get_element(conf_selector)
+                                                if confirm_btn:
+                                                    confirm_btn.click()
+                                                    print("Clicked confirmation button")
+                                                    driver.sleep(3)
+                                                    return True
+                                            except:
+                                                continue
+                                    except:
+                                        pass
+                                    
+                                    return True
+                            except:
+                                continue
+                        
+                        print("No submit button found or all buttons disabled")
+                        return False
+                        
+                    except Exception as e:
+                        print(f"Error clicking submit button: {e}")
+                        return False
+                else:
+                    print("No available time slots found - all slots are either full or disabled")
+                    return False
+                    
+            except Exception as e:
+                print(f"Error processing time slot dropdown: {e}")
+                return False
+        else:
+            print("Not on the correct page for time slot selection")
+            return False
+            
+    except Exception as e:
+        print(f"Error checking time slots: {e}")
+        return False
+
+
+def proceed_to_antrean(driver):
+    print(f"Current URL: {driver.current_url}")
+    driver.save_screenshot("login_result_v3.png")
+
+    # Click "Menu Antrean" button
+    print("Clicking 'Menu Antrean' button...")
+    driver.click('a[href="https://antrean.logammulia.com/antrean"]')
+    driver.sleep(5)  # Wait for the page to load
+
+    print(f"Current URL after clicking Menu Antrean: {driver.current_url}")
+    driver.save_screenshot("menu_antrean_result.png")
+    
+    # Find and check boutiques near Bintaro
+    print("Searching for boutiques near Bintaro...")
+    
+    try:
+        # Look for the dropdown select element
+        try:
+            driver.is_element_present('#site')
+            print("Found boutique dropdown, selecting Bintaro...")
+            
+            # Try different methods to select Bintaro option
+            try:
+                # Method 1: Try using select_element
+                driver.select('#site', '16')
+                print("Selected Bintaro using select method")
+            except:
+                try:
+                    # Method 2: Try clicking the option directly
+                    driver.click('option[value="16"]')
+                    print("Selected Bintaro by clicking option")
+                except:
+                    try:
+                        # Method 3: Try using JavaScript
+                        driver.run_js('document.getElementById("site").value = "16";')
+                        print("Selected Bintaro using JavaScript")
+                    except:
+                        print("Could not select Bintaro option")
+            
+            driver.sleep(2)
+            
+            # Click the "Tampilkan Butik" button
+            print("Clicking 'Tampilkan Butik' button...")
+            try:
+                # Method 1: Get the token and submit properly
+                try:
+                    # Get token value using botasaurus JavaScript method
+                    token_value = driver.run_js('return document.querySelector("input[name=\\"t\\"]") ? document.querySelector("input[name=\\"t\\"]").value : null;')
+                    
+                    if token_value:
+                        print(f"Found token: {token_value}")
+                        
+                        # Submit form with token using JavaScript
+                        driver.run_js(f'''
+                            var form = document.querySelector("form");
+                            var siteSelect = document.getElementById("site");
+                            var tokenInput = document.querySelector('input[name="t"]');
+                            
+                            if (siteSelect) siteSelect.value = "16";
+                            if (tokenInput) tokenInput.value = "{token_value}";
+                            
+                            form.submit();
+                        ''')
+                        print("Submitted form with Bintaro and token")
+                        driver.sleep(5)
+                    else:
+                        print("No token found, trying alternative methods")
+                        
+                        # Try to get token from page source
+                        page_html = driver.page_html
+                        token_match = re.search(r'name="t"\s+value="([^"]+)"', page_html)
+                        if token_match:
+                            token_value = token_match.group(1)
+                            print(f"Found token in HTML: {token_value}")
+                            
+                            driver.run_js(f'''
+                                var form = document.querySelector("form");
+                                var siteSelect = document.getElementById("site");
+                                var tokenInput = document.querySelector('input[name="t"]');
+                                
+                                if (siteSelect) siteSelect.value = "16";
+                                if (tokenInput) tokenInput.value = "{token_value}";
+                                
+                                form.submit();
+                            ''')
+                            print("Submitted form with token from HTML")
+                            driver.sleep(5)
+                        else:
+                            print("Could not find token anywhere")
+                        
+                except Exception as e:
+                    print(f"Error with token method: {e}")
+                    
+                    try:
+                        # Method 2: Try direct navigation with token
+                        page_html = driver.page_html
+                        token_match = re.search(r'name="t"\s+value="([^"]+)"', page_html)
+                        if token_match:
+                            token_value = token_match.group(1)
+                            driver.get(f"https://antrean.logammulia.com/antrean?site=16&t={token_value}")
+                            print(f"Navigated directly with site=16 and token")
+                            driver.sleep(5)
+                        else:
+                            driver.get("https://antrean.logammulia.com/antrean?site=16")
+                            print("Navigated directly with site parameter only")
+                            driver.sleep(5)
+                    except:
+                        print("Could not navigate directly")
+                    
+            except Exception as e:
+                print(f"Error clicking submit button: {e}")
+            
+            print(f"Current URL after selecting Bintaro: {driver.current_url}")
+            
+            # Check if we successfully navigated to boutique page
+            if driver.current_url.startswith("https://antrean.logammulia.com/antrean?site="):
+                print("Successfully navigated to boutique page")
+                driver.sleep(5)  # Wait for page to load
+                
+                # Try to select available time slot
+                time_slot_selected = select_available_time_slot(driver)
+                if time_slot_selected:
+                    print("Successfully selected and booked time slot!")
+                else:
+                    print("No available time slots found - all slots are full")
+            else:
+                print("URL changed to:", driver.current_url)
+            
+            # Debug: Print page HTML to see structure
+            print("Debug: Checking page structure...")
+            page_html = driver.page_html
+            print(f"Page title: {driver.title}")
+            
+            # Check if URL changed after clicking button
+            if driver.current_url == "https://antrean.logammulia.com/antrean":
+                print("URL unchanged, checking if page loaded properly...")
+                driver.sleep(5)  # Wait longer for page to load
+                
+                # Check if Bintaro selection is still active
+                try:
+                    selected_value = driver.run_js('return document.getElementById("site").value;')
+                    print(f"Currently selected boutique value: {selected_value}")
+                    
+                    if selected_value != "16":
+                        print("Bintaro not selected, trying again...")
+                        driver.run_js('document.getElementById("site").value = "16";')
+                        driver.sleep(2)
+                        driver.click('.btn-primary')
+                        driver.sleep(5)
+                except:
+                    print("Could not check selected value")
+                
+                # Try to scroll down to see if more content appears
+                try:
+                    driver.run_js('window.scrollTo(0, document.body.scrollHeight);')
+                    driver.sleep(2)
+                    print("Scrolled to bottom of page")
+                except:
+                    print("Could not scroll")
+                
+                # Check if there are any forms or tables with time slots
+                try:
+                    page_text = driver.get_text('body')
+                    print("Page content preview:")
+                    print(page_text[:500])  # Show first 500 characters
+                    
+                    # Look for specific patterns
+                    if "jadwal" in page_text.lower():
+                        print("Found 'jadwal' in page")
+                    if "slot" in page_text.lower():
+                        print("Found 'slot' in page")
+                    if "tersedia" in page_text.lower():
+                        print("Found 'tersedia' in page")
+                    if "penuh" in page_text.lower():
+                        print("Found 'penuh' in page")
+                        
+                except Exception as e:
+                    print(f"Error getting page text: {e}")
+                
+                # Try to find any clickable elements
+                try:
+                    clickable_selectors = [
+                        'a[href]',
+                        'button',
+                        '.btn',
+                        'input[type="button"]',
+                        'input[type="submit"]',
+                        '[onclick]',
+                        'td[onclick]',
+                        'tr[onclick]'
+                    ]
+                    
+                    for selector in clickable_selectors:
+                        try:
+                            elements = driver.get_elements(selector)
+                            if elements:
+                                print(f"Found {len(elements)} clickable elements with selector '{selector}'")
+                                for i, elem in enumerate(elements[:3]):
+                                    try:
+                                        elem_text = elem.text.strip()
+                                        if elem_text:
+                                            print(f"  Element {i+1}: '{elem_text}'")
+                                    except:
+                                        pass
+                                break
+                        except:
+                            continue
+                            
+                except Exception as e:
+                    print(f"Error finding clickable elements: {e}")
+                
+                # Check if there are any new elements
+                try:
+                    # Look for any time slot related elements using correct botasaurus methods
+                    print("Looking for time slot elements...")
+                    
+                    # Try to find buttons with time patterns
+                    time_selectors = [
+                        'button:contains("08:")',
+                        'button:contains("09:")',
+                        'button:contains("10:")',
+                        'button:contains("11:")',
+                        'button:contains("13:")',
+                        'button:contains("14:")',
+                        'button:contains("15:")',
+                        'button:contains("16:")',
+                        'button:contains("Tersedia")',
+                        '.btn-primary',
+                        '.btn-success'
+                    ]
+                    
+                    found_time_slots = False
+                    for selector in time_selectors:
+                        try:
+                            element = driver.get_element(selector)
+                            if element:
+                                element_text = element.text.strip()
+                                print(f"Found time slot with selector '{selector}': '{element_text}'")
+                                
+                                # Click the first 3 available time slots
+                                if not found_time_slots:
+                                    print("Clicking time slot...")
+                                    element.click()
+                                    driver.sleep(3)
+                                    found_time_slots = True
+                                    
+                                    # Look for confirmation buttons
+                                    try:
+                                        confirm_btn = driver.get_element('button:contains("Konfirmasi"), button:contains("Ya"), button:contains("OK")')
+                                        if confirm_btn:
+                                            print("Found confirmation button, clicking...")
+                                            confirm_btn.click()
+                                            driver.sleep(3)
+                                            break
+                                    except:
+                                        pass
+                        except:
+                            continue
+                    
+                    if not found_time_slots:
+                        print("No time slot buttons found")
+                        
+                        # Try to find any clickable elements with time patterns in page text
+                        try:
+                            page_text = driver.get_text('body')
+                            times = re.findall(r'\b([0-9]{1,2}:[0-9]{2})\b', page_text)
+                            if times:
+                                print(f"Found times in page text: {times[:10]}")
+                                
+                                # Try to click buttons containing these times
+                                for time_str in times[:3]:
+                                    try:
+                                        driver.click(f'button:contains("{time_str}")')
+                                        print(f"Clicked button with time: {time_str}")
+                                        driver.sleep(2)
+                                        break
+                                    except:
+                                        continue
+                            else:
+                                print("No time patterns found in page text")
+                        except:
+                            print("Could not extract time patterns")
+                            
+                except Exception as e:
+                    print(f"Error looking for time elements: {e}")
+            else:
+                print(f"URL changed to: {driver.current_url}")
+            
+            # Look for any buttons or time slots
+            try:
+                print("Looking for all buttons on page...")
+                button_selectors = [
+                    'button',
+                    '.btn',
+                    '.btn-primary',
+                    '.btn-success',
+                    'input[type="button"]',
+                    'input[type="submit"]'
+                ]
+                
+                for selector in button_selectors:
+                    try:
+                        buttons = driver.get_elements(selector)
+                        if buttons:
+                            print(f"Found {len(buttons)} buttons with selector '{selector}'")
+                            for i, btn in enumerate(buttons[:5]):  # Show first 5 buttons
+                                try:
+                                    btn_text = btn.text.strip()
+                                    print(f"  Button {i+1}: '{btn_text}'")
+                                except:
+                                    print(f"  Button {i+1}: [error getting text]")
+                            break
+                    except:
+                        continue
+                        
+            except Exception as e:
+                print(f"Error getting buttons: {e}")
+            
+        except Exception as e:
+            print(f"Error with dropdown: {e}")
+            print("Debug: Trying to find any select elements...")
+            try:
+                selects = driver.get_elements('select')
+                print(f"Found {len(selects)} select elements")
+                for i, sel in enumerate(selects):
+                    try:
+                        sel_id = sel.get_attribute('id')
+                        print(f"  Select {i+1}: id='{sel_id}'")
+                    except:
+                        print(f"  Select {i+1}: [error getting id]")
+            except:
+                print("No select elements found")
+                
+            # Debug: Check if we're on the right page
+            print("Debug: Page source preview...")
+            try:
+                body_text = driver.get_text('body')
+                print(f"Page contains 'Bintaro': {'Bintaro' in body_text}")
+                print(f"Page contains 'Pilih': {'Pilih' in body_text}")
+                print(f"Page contains 'BELM': {'BELM' in body_text}")
+            except:
+                print("Could not get body text")
+        
+        # Now check for available time slots
+        print("Looking for available time slots...")
+        
+        try:
+            # Look for time slot buttons or links
+            time_slots = []
+            
+            # Try different selectors for time slots
+            selectors = [
+                'button:contains("Tersedia")',
+                'button:contains("08:")',
+                'button:contains("09:")',
+                'button:contains("10:")',
+                'button:contains("11:")',
+                'button:contains("13:")',
+                'button:contains("14:")',
+                'button:contains("15:")',
+                'button:contains("16:")',
+                '.btn-primary',
+                '.btn-success',
+                'a[href*="booking"]',
+                'button[onclick*="booking"]'
+            ]
+            
+            for selector in selectors:
+                try:
+                    elements = driver.get_elements(selector)
+                    if elements:
+                        time_slots.extend(elements)
+                        print(f"Found {len(elements)} elements with selector: {selector}")
+                except:
+                    continue
+            
+            if time_slots:
+                print(f"Found {len(time_slots)} time slots!")
+                
+                # Try to click the first 3 available slots
+                for i, slot in enumerate(time_slots[:3]):
+                    try:
+                        slot_text = slot.text.strip()
+                        print(f"   Slot {i+1}: {slot_text}")
+                        
+                        if slot_text and ("Tersedia" in slot_text or any(f"{h:02d}:" in slot_text for h in range(8, 17))):
+                            print(f"Clicking slot {i+1}: {slot_text}")
+                            slot.click()
+                            driver.sleep(3)
+                            
+                            # Check if we need to confirm booking
+                            try:
+                                confirm_buttons = driver.get_elements('button:contains("Konfirmasi"), button:contains("Ya"), button:contains("OK"), .btn-primary')
+                                if confirm_buttons:
+                                    print("Found confirmation button, clicking...")
+                                    confirm_buttons[0].click()
+                                    driver.sleep(3)
+                                    break
+                            except:
+                                pass
+                            
+                    except Exception as e:
+                        print(f"   Error clicking slot {i+1}: {e}")
+                        continue
+            else:
+                print("No available time slots found")
+                
+                # Try to find and click on specific time buttons
+                time_buttons = ['08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00']
+                for time_str in time_buttons:
+                    try:
+                        driver.click(f'button:contains("{time_str}")')
+                        driver.sleep(2)
+                        print(f"Clicked time: {time_str}")
+                        break
+                    except:
+                        continue
+                    
+        except Exception as e:
+            print(f"Error looking for time slots: {e}")
+            
+    except Exception as e:
+        print(f"Error in boutique selection: {e}")
+    
+    driver.save_screenshot("final_result.png")
+    
+    return {
+        "final_url": driver.current_url,
+        "page_html": driver.page_html[:1000],
+        "status": "completed"
+    }
+
+
+if __name__ == "__main__":
+    result = login_task()
+    print("Task completed.")
