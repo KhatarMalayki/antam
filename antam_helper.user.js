@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Antrean Logam Mulia Helper Pro (v4.2 - Auto-Click Menu Antrean)
+// @name         Antrean Logam Mulia Helper Pro (v4.3 - Auto-Redirect to Login)
 // @namespace    http://tampermonkey.net/
-// @version      4.2
+// @version      4.3
 // @description  Otomatisasi antrean Antam - Login otomatis super cepat, pemulihan sesi, dan bypass Cloudflare Turnstile (Aggressive Landing Page Auto-Click)
 // @author       Manus
 // @match        https://antrean.logammulia.com/*
@@ -137,28 +137,9 @@
     }
 
     // --- HALAMAN LANDING PAGE ---
-    let landingPageMonitor;
-
     function handleLandingPage() {
-        // Mencari link "Log In" berdasarkan class btn-gradient dan teks
-        const loginLink = document.querySelector('a.btn-gradient');
-
-        if (loginLink && loginLink.innerText.trim().toLowerCase().includes('log in')) {
-            log('Link "Log In" di landing page terdeteksi. Mengklik otomatis INSTAN...');
-            loginLink.click();
-            clearInterval(landingPageMonitor); // Stop monitoring after successful click
-            return true;
-        }
-        return false;
-    }
-
-    function startLandingPageMonitor() {
-        if (window.location.pathname === '/') {
-            log('Memulai monitoring Landing Page...');
-            landingPageMonitor = setInterval(() => {
-                handleLandingPage();
-            }, 500); // Cek setiap 0.5 detik
-        }
+        log('Landing page terdeteksi. Mengarahkan ke login secepatnya...');
+        window.location.href = 'https://antrean.logammulia.com/login';
     }
 
     // --- HALAMAN LOGIN (ULTRA AUTO-LOGIN v4.1) ---
@@ -356,15 +337,12 @@
         handleAntreanPage();
     } else if (url.includes('/users') || url.includes('/home')) {
         handleUsersPage();
+    } else if (window.location.pathname === '/') {
+        handleLandingPage();
     } else {
-        // Cek apakah ini halaman root tanpa path
-        if (window.location.pathname === '/') {
-            startLandingPageMonitor();
-            return;
-        }
-
         // Jika di halaman lain tapi tidak ada tanda login, lempar ke login
         if (!document.body.innerText.includes('Logout')) {
+            log('Sesi tidak terdeteksi di halaman ini. Mengarahkan ke login...');
             window.location.href = 'https://antrean.logammulia.com/login';
         } else {
             // Jika tidak di halaman antrean, login, atau landing, coba jalankan solver
